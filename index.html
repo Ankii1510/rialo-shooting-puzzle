@@ -6,12 +6,28 @@ Centered, readable, dark theme, banner, targets, score & lives.
 */
 
 const STATIC_QUESTIONS = [
-  { q: "What can you do on Rialo?", correct: "Earn", wrong: ["Cook", "Chat"] },
-  { q: "Rialo is primarily focused on?", correct: "On-chain finance", wrong: ["Social media", "Streaming"] },
-  { q: "Which feature commonly appears in DeFi platforms?", correct: "Liquidity", wrong: ["Baking", "Messaging"] },
-  { q: "Which action helps you grow funds?", correct: "Stake", wrong: ["Swipe", "Post"] },
-  { q: "A common DeFi component is?", correct: "Yield", wrong: ["Stories", "Profiles"] },
+  { q: "What does Rialo emphasize building for?", correct: "Real-world apps", wrong: ["Only gaming dApps", "Static websites"] },
+  { q: "Which phrase does Rialo use to describe itself?", correct: "Not a Layer One", wrong: ["Purely a payments chain", "A social media platform"] },
+  { q: "Rialo aims to deliver what type of data natively on-chain?", correct: "Real-world asset pricing (real-time)", wrong: ["Only static off-chain files", "Purely user photos"] },
+  { q: "Which capability does Rialo advertise as removing the need for?", correct: "Middleware stacks", wrong: ["Frontend frameworks", "Cloud hosting entirely"] },
+  { q: "Which organization is publicly connected with building Rialo (raised initial funds)?", correct: "Subzero Labs / $20M initial raise reported", wrong: ["A video-game studio", "An e-commerce marketplace"] },
+  { q: "Which feature name appears in the site’s code-like snippets for Rialo?", correct: 'bridge.init("native")', wrong: ['ui.launch("modern")', 'wallet.open("legacy")'] },
+  { q: "What kind of scheduler mode is mentioned on the site?", correct: 'scheduler.activate("autonomous")', wrong: ['scheduler.enable("manual")', 'scheduler.stop("one-shot")'] },
+  { q: "Which security handshake method is referenced on the site?", correct: "threshold_mpc", wrong: ["singlekey_rsa", "basic_cookie"] },
+  { q: "Which encryption phrase is used in Rialo’s description?", correct: "identity_based", wrong: ["password_based", "mono_hash"] },
+  { q: "What gas characteristic does Rialo advertise?", correct: "stable gas", wrong: ["unpredictable gas spikes", "zero latency gas only"] },
+  { q: "Which of the following is listed as a built-in capability on Rialo?", correct: "Native cross-app data movement (connectivity)", wrong: ["Only single-app file storage", "Only private chat rooms"] },
+  { q: "Rialo’s messaging about onboarding users highlights what approach?", correct: "Bring real users to builders; simple onboarding", wrong: ["Invite-only developer-only access forever", "Mandatory VPN for access"] },
+  { q: "Which use-case category does Rialo explicitly promote?", correct: "Payments, weather, shipping — real-world triggers", wrong: ["Only NFT art galleries", "Only anonymous chats"] },
+  { q: "What does Rialo claim about application speed?", correct: "Real world speed — no delays, real-time reactions", wrong: ["Best-effort batch updates (hourly)", "Offline-first only"] },
+  { q: "Which phrase below matches Rialo’s privacy capability?", correct: "Apps can send encrypted messages directly to real people", wrong: ["All messages are public by default", "Privacy only via browser plugins"] },
+  { q: "Which statement fits Rialo’s developer promise?", correct: "Build less, build more — full-stack primitives for faster shipping", wrong: ["Long manual integration with many vendors", "Requires building every layer from scratch"] },
+  { q: "Which content category does Rialo explicitly list on their site?", correct: "Careers & Contributors", wrong: ["Only donation links", "Only memes"] },
+  { q: "Which of these topics appears as a blog subject on Rialo’s site?", correct: "Real World Assets (RWAs) and making them real", wrong: ["Gardening tips for devs", "Movie reviews"] },
+  { q: "Which benefit does Rialo claim for cross-chain/app data movement?", correct: "Smarter pricing, fairer swaps, real-time reactions", wrong: ["More manual reconciliation for trades", "Slower settlement times"] },
+  { q: "What does Rialo recommend builders will get from the platform?", correct: "Everything needed built in — plug in & ship faster", wrong: ["Only low-level primitives with no tooling", "Only a backend-as-a-service for mobile apps"] },
 ];
+
 
 function randBetween(a,b){ return a + Math.random()*(b-a); }
 

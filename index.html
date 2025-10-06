@@ -1,139 +1,175 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Rialo Shooting Puzzle</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .fade {
-      transition: all 0.3s ease;
+import React, { useEffect, useRef, useState } from "react";
+
+const RIALO_URL = "https://www.rialo.io/";
+const DEFAULT_PROXY = "https://r.jina.ai/http://";
+
+const STATIC_QUESTIONS = [
+  { q: "What can you do on Rialo?", correct: "Earn", wrong: ["Cook", "Chat"] },
+  { q: "Rialo is primarily focused on?", correct: "On-chain finance", wrong: ["Social media", "Streaming"] },
+  { q: "Which feature commonly appears in DeFi platforms?", correct: "Liquidity", wrong: ["Baking", "Messaging"] },
+  { q: "Which action helps you grow funds?", correct: "Stake", wrong: ["Swipe", "Post"] },
+  { q: "A common DeFi component is?", correct: "Yield", wrong: ["Stories", "Profiles"] },
+];
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function randBetween(a,b){ return a + Math.random()*(b-a); }
+
+export default function RialoShootingPuzzle({ corsProxy = DEFAULT_PROXY }) {
+  const [fragments, setFragments] = useState([]);
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [targets, setTargets] = useState([]);
+  const [message, setMessage] = useState('Fetching questions…');
+  const [soundOn, setSoundOn] = useState(true);
+  const containerRef = useRef(null);
+  const nextId = useRef(1);
+  const animRef = useRef(null);
+  const audioCtxRef = useRef(null);
+
+  // audio
+  useEffect(()=>{
+    return ()=>{ try{ audioCtxRef.current && audioCtxRef.current.close(); }catch(e){} }
+  },[]);
+
+  function playBeep(freq=440, type='sine', time=0.06){
+    if(!soundOn) return;
+    try{
+      if(!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext||window.webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type=type; o.frequency.value=freq;
+      g.gain.value=0.0001;
+      o.connect(g); g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.12, now+0.01);
+      o.start(now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+time);
+      o.stop(now+time+0.02);
+    }catch(e){console.warn('Audio failed',e)}
+  }
+  function playHit(){ playBeep(880,'square',0.08); }
+  function playMiss(){ playBeep(220,'sawtooth',0.12); }
+
+  // fetch questions
+  useEffect(()=>{
+    let mounted=true;
+    async function fetchFragments(){
+      setLoading(true);
+      try{
+        const res = await fetch((corsProxy||"")+RIALO_URL);
+        if(!res.ok) throw new Error('fetch failed');
+        const text = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text,'text/html');
+        const tags=['h1','h2','h3','a','p','li'];
+        const snippets=[];
+        tags.forEach(t=>{
+          doc.querySelectorAll(t).forEach(el=>{
+            const s=el.textContent.trim();
+            if(s && s.length>2 && s.length<40) snippets.push(s);
+          });
+        });
+        const unique=Array.from(new Set(snippets)).slice(0,30);
+        if(unique.length>=5 && mounted){ setFragments(unique); setMessage('Live questions loaded'); }
+        else { setFragments([]); setMessage('Using static questions'); }
+      }catch(err){ console.warn(err); setFragments([]); setMessage('Fetch failed — using static questions'); }
+      finally{ if(mounted) setLoading(false); }
     }
-    .correct {
-      background-color: #16a34a !important;
-    }
-    .wrong {
-      background-color: #dc2626 !important;
-    }
-  </style>
-</head>
-<body class="bg-gray-100 text-gray-800 flex flex-col items-center min-h-screen">
+    fetchFragments();
+    return ()=>{ mounted=false; }
+  },[corsProxy]);
 
-  <!-- Banner -->
-  <div class="bg-blue-600 text-white text-center py-4 text-3xl font-bold w-full">
-    Welcome to the Rialo Shooting Puzzle Game
-  </div>
-
-  <!-- Start Screen -->
-  <div id="startScreen" class="flex flex-col items-center justify-center flex-1" style="margin-top:50px;">
-    <!-- Updated official Rialo logo -->
-    <img src="https://www.rialo.io/assets/logo.svg" alt="Rialo Logo" class="w-40 mb-8" />
-    <button id="startBtn" class="px-8 py-4 bg-blue-600 text-white text-2xl rounded-lg hover:bg-blue-700 transition">
-      Play
-    </button>
-  </div>
-
-  <!-- Game Screen -->
-  <div id="gameScreen" class="hidden flex flex-col items-center flex-1 w-full">
-    <div id="questionContainer" class="p-4 bg-white shadow-md rounded-lg my-4 w-full max-w-md"></div>
-    <div id="score" class="text-xl font-semibold mt-4"></div>
-  </div>
-
-  <script>
-    // Updated questions based on Rialo website content
-    const questions = [
-      {
-        id: 1,
-        question: "What is Rialo designed for?",
-        options: ["Real-world blockchain", "Social media", "Gaming"],
-        answer: "Real-world blockchain"
-      },
-      {
-        id: 2,
-        question: "What capability does Rialo provide?",
-        options: ["Native web calls in smart contracts", "Only NFTs", "Messaging app"],
-        answer: "Native web calls in smart contracts"
-      },
-      {
-        id: 3,
-        question: "How does Rialo handle real-world data?",
-        options: ["Feeds data natively on chain", "Requires oracles", "Manual uploads"],
-        answer: "Feeds data natively on chain"
-      },
-      {
-        id: 4,
-        question: "What does Rialo enable in terms of identity?",
-        options: ["Email/SMS as Web3 passports", "Only wallet addresses", "No identity features"],
-        answer: "Email/SMS as Web3 passports"
-      },
-      {
-        id: 5,
-        question: "What kind of speed does Rialo offer?",
-        options: ["Sub-second end-to-end latency", "Minutes delay", "No speed guarantees"],
-        answer: "Sub-second end-to-end latency"
+  // build questions
+  useEffect(()=>{
+    const dyn=[];
+    const pool=fragments.slice();
+    while(dyn.length<5 && pool.length){
+      const a=pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+      const short=a.split('\n')[0].split(' - ')[0].split(':')[0].trim();
+      if(short.length>2 && short.length<32){
+        dyn.push({ q:`Which option relates to: "${short}"?`, correct:short, wrong:generateWrongOptions(short) });
       }
-    ];
+    }
+    setQuestions([...STATIC_QUESTIONS.slice(0,5), ...dyn].slice(0,10));
+  },[fragments]);
 
-    const startScreen = document.getElementById('startScreen');
-    const gameScreen = document.getElementById('gameScreen');
-    const startBtn = document.getElementById('startBtn');
-    const questionContainer = document.getElementById('questionContainer');
-    const scoreEl = document.getElementById('score');
+  function generateWrongOptions(correct){
+    const candidates = ['Swap','Earn','Borrow','Stake','Liquidity','Yield','NFT','Governance','Bridge','Token','Marketplace','Bond'];
+    const out=[];
+    while(out.length<2){
+      const c=candidates[Math.floor(Math.random()*candidates.length)];
+      if(c!==correct && !out.includes(c)) out.push(c);
+    }
+    return out;
+  }
 
-    let current = 0;
-    let score = 0;
+  // spawn targets
+  useEffect(()=>{
+    setTargets([]);
+    if(questions.length===0) return;
+    spawnTargets(roundIndex);
+  },[roundIndex, questions]);
 
-    startBtn.addEventListener('click', () => {
-      startScreen.classList.add('hidden');
-      gameScreen.classList.remove('hidden');
-      showQuestion();
-    });
+  function spawnTargets(index){
+    const q=questions[index]; if(!q) return;
+    const container = containerRef.current; 
+    const rect = container ? container.getBoundingClientRect() : { width: 800, height: 400 };
+    const pool=[q.correct,...q.wrong];
+    for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
 
-    function showQuestion() {
-      const q = questions[current];
-      questionContainer.innerHTML = `
-        <h2 class="text-xl font-semibold mb-4">${q.question}</h2>
-        <div class="flex flex-col space-y-2">
-          ${q.options
-            .map(
-              (opt) => `
-            <button class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition fade" data-opt="${opt}">
-              ${opt}
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
+    const tcount=clamp(6+index,6,12);
+    const newTargets=[];
+    for(let i=0;i<tcount;i++){
+      const id=nextId.current++;
+      const frag=pool[i%pool.length];
+      const size=randBetween(70,120);
+      const fromLeft=Math.random()<0.5;
+      const speed=randBetween(0.4,1.4)*clamp(1+index*0.08,0.8,2);
+      newTargets.push({id, x:fromLeft?-150:rect.width+150, y:randBetween(40,rect.height-100), vx:fromLeft?speed:-speed, frag, size, hit:false});
+    }
+    setTargets(newTargets);
+  }
 
-      const buttons = questionContainer.querySelectorAll('button[data-opt]');
-      buttons.forEach((btn) => {
-        btn.addEventListener('click', () => selectAnswer(btn.dataset.opt, btn));
+  // animation
+  useEffect(()=>{
+    function tick(){
+      setTargets(prev=>{
+        const container = containerRef.current;
+        const rect = container ? container.getBoundingClientRect() : { width:800, height:400 };
+        return prev.map(t=>({...t, x:t.x+t.vx})).filter(t=> t.x>-300 && t.x<rect.width+300 && !t.remove);
       });
-
-      scoreEl.textContent = `Score: ${score}`;
+      animRef.current=requestAnimationFrame(tick);
     }
+    animRef.current=requestAnimationFrame(tick);
+    return ()=>cancelAnimationFrame(animRef.current);
+  },[]);
 
-    function selectAnswer(option, btn) {
-      const correct = option === questions[current].answer;
-      btn.classList.add(correct ? 'correct' : 'wrong');
-
-      // Disable all buttons to prevent multiple clicks
-      questionContainer.querySelectorAll('button[data-opt]').forEach((b) => (b.disabled = true));
-
-      if (correct) score++;
-
-      setTimeout(() => {
-        current++;
-        if (current < questions.length) {
-          showQuestion();
-        } else {
-          questionContainer.innerHTML = `<div class="text-2xl font-bold">Your final score: ${score}/${questions.length}</div>`;
-          scoreEl.textContent = '';
-        }
-      }, 500);
+  function shoot(id){
+    const t=targets.find(tt=>tt.id===id); if(!t) return;
+    const currentQ=questions[roundIndex]; if(!currentQ) return;
+    setTargets(prev=>prev.map(x=>x.id===id?{...x,hit:true}:x));
+    if(t.frag===currentQ.correct){
+      setScore(s=>s+10);
+      playHit();
+      setMessage('✅ Correct!');
+      setTimeout(()=>{
+        if(roundIndex+1>=questions.length) setMessage('🎉 You finished all questions!');
+        else setRoundIndex(r=>r+1);
+      },500);
+    }else{
+      setLives(l=>l-1);
+      playMiss();
+      setMessage('❌ Wrong!');
+      if(lives-1<=0) setTimeout(()=> setMessage('💀 Game Over!'),200);
     }
-  </script>
-</body>
-</html>
+    setTimeout(()=>{ setTargets(prev=>prev.filter(x=>x.id!==id)); },350);
+  }
+
+  function resetGame(){
+    setScore(0); setLives(3); setRoundIndex(0); set
+
 

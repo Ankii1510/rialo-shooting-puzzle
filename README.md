@@ -1,1 +1,1 @@
-# rialo-shooting-puzzle
+# Rialo-shooting-puzzleR

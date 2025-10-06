@@ -1,0 +1,395 @@
+import React, { useEffect, useRef, useState } from "react";
+
+/*
+Rialo Shooting Puzzle — Deluxe Edition
+Single-file React component (drop into a React + Tailwind project)
+
+Features added in this version:
+- Rialo-style dark gradient theme + big animated banner
+- Inline Rialo-style SVG logo in the corner (watermark)
+- 10 questions: 5 static (fallback) + up to 5 dynamic from https://www.rialo.io/ (best-effort)
+- Shooting mechanic (click targets) with crosshair cursor, particle hit flash
+- Lives system (3 lives), score, level progression
+- Sound effects via WebAudio (no external files) with toggle
+- Responsive layout and simple animations
+
+Notes:
+- The component attempts to fetch content from rialo.io through a CORS-friendly proxy (configurable prop). If fetch fails, static questions are used.
+- Tailwind is assumed present. If not, basic classes can be swapped to your CSS.
+*/
+
+const RIALO_URL = "https://www.rialo.io/";
+const DEFAULT_PROXY = "https://r.jina.ai/http://"; // best-effort public proxy; change if needed
+
+const STATIC_QUESTIONS = [
+  {
+    q: "What can you do on Rialo?",
+    correct: "Earn",
+    wrong: ["Cook", "Chat"],
+  },
+  {
+    q: "Rialo is primarily focused on?",
+    correct: "On-chain finance",
+    wrong: ["Social media", "Streaming"],
+  },
+  {
+    q: "Which feature commonly appears in DeFi platforms?",
+    correct: "Liquidity",
+    wrong: ["Baking", "Messaging"],
+  },
+  {
+    q: "Which action helps you grow funds?",
+    correct: "Stake",
+    wrong: ["Swipe", "Post"],
+  },
+  {
+    q: "A common DeFi component is?",
+    correct: "Yield",
+    wrong: ["Stories", "Profiles"],
+  },
+];
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function randBetween(a,b){ return a + Math.random()*(b-a); }
+
+export default function RialoShootingPuzzle({ corsProxy = DEFAULT_PROXY }) {
+  const [fragments, setFragments] = useState([]); // fragments from site
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [targets, setTargets] = useState([]);
+  const [message, setMessage] = useState('');
+  const [soundOn, setSoundOn] = useState(true);
+  const containerRef = useRef(null);
+  const nextId = useRef(1);
+  const animRef = useRef(null);
+
+  // audio context and simple SFX
+  const audioCtxRef = useRef(null);
+  useEffect(()=>{
+    audioCtxRef.current = null; // create when first needed to comply with user gesture policies
+    return ()=>{
+      try{ audioCtxRef.current && audioCtxRef.current.close(); }catch(e){}
+    }
+  },[]);
+
+  function playBeep(freq=440, type='sine', time=0.06) {
+    if (!soundOn) return;
+    try{
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext||window.webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+      o.start(now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + time);
+      o.stop(now + time + 0.02);
+    }catch(e){console.warn('Audio failed', e)}
+  }
+
+  function playHit() { playBeep(880,'square',0.08); }
+  function playMiss() { playBeep(220,'sawtooth',0.12); }
+
+  // fetch site fragments (best-effort)
+  useEffect(()=>{
+    let mounted = true;
+    async function fetchFragments(){
+      setLoading(true);
+      try{
+        const res = await fetch((corsProxy||"") + RIALO_URL);
+        if(!res.ok) throw new Error('fetch failed');
+        const text = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text,'text/html');
+        const tags = ['h1','h2','h3','a','p','li'];
+        const snippets = [];
+        tags.forEach(t=>{
+          doc.querySelectorAll(t).forEach(el=>{
+            const s = el.textContent.trim();
+            if(s && s.length>2 && s.length<40) snippets.push(s);
+          });
+        });
+        const unique = Array.from(new Set(snippets)).slice(0,30);
+        if(unique.length >= 5){
+          if(mounted) setFragments(unique);
+          setMessage('Live fragments loaded from rialo.io');
+        } else {
+          setFragments([]);
+          setMessage('Not enough live fragments — using static questions');
+        }
+      }catch(err){
+        console.warn('Fetch failed',err);
+        setFragments([]);
+        setMessage('Fetch failed — using static questions');
+      }finally{ if(mounted) setLoading(false); }
+    }
+    fetchFragments();
+    return ()=>{ mounted=false };
+  },[corsProxy]);
+
+  // Build questions: combine static + generated from fragments
+  useEffect(()=>{
+    const dyn = [];
+    // create up to 5 dynamic simple Q&A from fragments by selecting nouns/shorts
+    const pool = fragments.slice();
+    while(dyn.length < 5 && pool.length){
+      const a = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+      // make a simple question using the fragment as a correct answer
+      // ensure it's short
+      const short = a.split('\n')[0].split(' - ')[0].split(':')[0].trim();
+      if(short.length>2 && short.length<32){
+        dyn.push({ q: `Which option relates to: \"${short}\"?`, correct: short, wrong: generateWrongOptions(short) });
+      }
+    }
+    const combined = [...STATIC_QUESTIONS.slice(0,5), ...dyn].slice(0,10);
+    setQuestions(combined);
+  },[fragments]);
+
+  // helper to create wrong options (naive but works)
+  function generateWrongOptions(correct){
+    const candidates = ['Swap','Earn','Borrow','Stake','Liquidity','Yield','NFT','Governance','Bridge','Token','Marketplace','Bond'];
+    const out = [];
+    while(out.length<2){
+      const c = candidates[Math.floor(Math.random()*candidates.length)];
+      if(c!==correct && !out.includes(c)) out.push(c);
+    }
+    return out;
+  }
+
+  // spawn targets for current round
+  useEffect(()=>{
+    // clear old targets
+    setTargets([]);
+    if(questions.length === 0) return;
+    spawnTargetsForRound(roundIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[roundIndex, questions]);
+
+  function spawnTargetsForRound(index){
+    const q = questions[index];
+    if(!q) return;
+    const container = containerRef.current;
+    const rect = container ? container.getBoundingClientRect() : { width: 800, height: 400 };
+
+    const answerPool = [q.correct, ...q.wrong].slice();
+    // shuffle
+    for(let i=answerPool.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1)); [answerPool[i],answerPool[j]]=[answerPool[j],answerPool[i]];
+    }
+
+    // create 6-8 targets, assign answers to some
+    const tcount = clamp(6 + roundIndex, 6, 12);
+    const newTargets = [];
+    for(let i=0;i<tcount;i++){
+      const id = nextId.current++;
+      const frag = answerPool[i % answerPool.length];
+      const size = randBetween(70,120);
+      const fromLeft = Math.random()<0.5;
+      const speed = randBetween(0.4, 1.4) * clamp(1 + roundIndex*0.08, 0.8, 2.0);
+      newTargets.push({ id, x: fromLeft ? -150 : rect.width+150, y: randBetween(40, rect.height-100), vx: fromLeft ? speed : -speed, frag, size, hit:false });
+    }
+    setTargets(newTargets);
+  }
+
+  // animation tick
+  useEffect(()=>{
+    function tick(){
+      setTargets(prev=>{
+        const container = containerRef.current;
+        const rect = container ? container.getBoundingClientRect() : { width: 800, height: 400 };
+        const next = prev.map(t=>({...t, x: t.x + t.vx})).filter(t=> t.x > -300 && t.x < rect.width + 300 && !t.remove);
+        return next;
+      });
+      animRef.current = requestAnimationFrame(tick);
+    }
+    animRef.current = requestAnimationFrame(tick);
+    return ()=> cancelAnimationFrame(animRef.current);
+  },[]);
+
+  // handle shooting
+  function shoot(id){
+    const t = targets.find(tt=>tt.id===id);
+    if(!t) return;
+    const currentQ = questions[roundIndex];
+    if(!currentQ) return;
+
+    setTargets(prev => prev.map(x => x.id===id ? {...x, hit:true} : x));
+
+    if(t.frag === currentQ.correct){
+      setScore(s=>s+10);
+      playHit();
+      setMessage('Nice shot!');
+      // small delay then advance
+      setTimeout(()=>{
+        if(roundIndex+1 >= questions.length){
+          setMessage('🎉 You completed all Rialo puzzles!');
+        } else {
+          setRoundIndex(r=>r+1);
+          setMessage('Next question');
+        }
+      }, 500);
+    } else {
+      setLives(l=>l-1);
+      playMiss();
+      setMessage('Wrong hit!');
+      if(lives-1 <= 0){
+        setTimeout(()=> setMessage('Game Over — try again!'),200);
+      }
+    }
+
+    // remove hit target after animation
+    setTimeout(()=>{
+      setTargets(prev=> prev.filter(x=> x.id !== id));
+    }, 350);
+  }
+
+  function resetGame(){
+    setScore(0); setLives(3); setRoundIndex(0); setMessage('Game reset — good luck!');
+    nextId.current = 1;
+    // respawn
+    setTimeout(()=> spawnTargetsForRound(0), 200);
+  }
+
+  const currentQuestion = questions[roundIndex];
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ fontFamily: 'Inter, system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial' }}>
+      <div className="w-full max-w-5xl rounded-xl overflow-hidden relative shadow-2xl" style={{ background: 'linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%)' }}>
+
+        {/* Top banner with big animated title */}
+        <div className="w-full py-6 flex items-center justify-center relative">
+          <div style={{ position:'absolute', left:16, top:12 }}>
+            {/* Inline logo (simple svg) */}
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="g" x1="0" x2="1">
+                  <stop offset="0" stopColor="#5ee7df" />
+                  <stop offset="1" stopColor="#7c3aed" />
+                </linearGradient>
+              </defs>
+              <rect x="1" y="1" width="22" height="22" rx="5" stroke="url(#g)" strokeWidth="1.6" fill="rgba(255,255,255,0.02)" />
+              <path d="M6 16L10 8L14 16" stroke="url(#g)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-transparent" style={{
+            background: 'linear-gradient(90deg,#7ee7ff,#b28bff,#8ae6ff)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            textShadow: '0 4px 18px rgba(124,58,237,0.18)'
+          }}>
+            🔥 RIALO SHOOTING PUZZLE 🔥
+          </h1>
+        </div>
+
+        {/* HUD (score, lives, sound toggle) */}
+        <div className="absolute right-6 top-6 flex items-center gap-4">
+          <div className="px-3 py-2 bg-white/6 rounded-lg backdrop-blur-sm border border-white/6 text-xs">
+            <div className="text-xs text-slate-100">Score</div>
+            <div className="text-lg font-semibold">{score}</div>
+          </div>
+          <div className="px-3 py-2 bg-white/6 rounded-lg backdrop-blur-sm border border-white/6 text-xs">
+            <div className="text-xs text-slate-100">Lives</div>
+            <div className="text-lg font-semibold">{lives}</div>
+          </div>
+          <button onClick={()=>{ setSoundOn(s=>!s); if(!audioCtxRef.current && !soundOn) audioCtxRef.current = new (window.AudioContext||window.webkitAudioContext)(); }} className="px-3 py-2 bg-white/6 rounded-lg border border-white/6 text-xs">
+            {soundOn ? 'Sound: On' : 'Sound: Off'}
+          </button>
+        </div>
+
+        {/* Game area */}
+        <div className="flex flex-col md:flex-row gap-4 p-6">
+          <div ref={containerRef} className="relative flex-1 h-96 md:h-[520px] rounded-lg overflow-hidden border border-white/6 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))]" style={{ backgroundImage: 'radial-gradient( circle at 10% 10%, rgba(126,231,255,0.04), rgba(124,58,237,0.02) 25%, transparent 35%)' }}>
+
+            {/* moving targets */}
+            {targets.map(t => (
+              <div key={t.id}
+                onClick={() => shoot(t.id)}
+                style={{ transform: `translate(${t.x}px, ${t.y}px)`, width: t.size+'px', height: (t.size*0.55)+'px' }}
+                className={`absolute select-none cursor-pointer flex items-center justify-center rounded-2xl shadow-2xl p-2 transition-transform duration-150 ${t.hit ? 'opacity-30 scale-75' : 'opacity-100'}`}
+              >
+                <div style={{ width: '100%', height: '100%', display:'flex', alignItems:'center', justifyContent:'center', padding:'6px', borderRadius:12, background: 'linear-gradient(135deg, rgba(126,231,255,0.08), rgba(124,58,237,0.08))', border:'1px solid rgba(126,231,255,0.06)', boxShadow:'0 8px 24px rgba(12,10,20,0.6)' }}>
+                  <div className="text-xs md:text-sm font-medium text-white truncate px-2 text-center">{t.frag}</div>
+                </div>
+              </div>
+            ))}
+
+            {/* crosshair (follows mouse) */}
+            <Crosshair />
+
+            {/* big center banner hint */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-10 text-8xl font-extrabold text-white">RIALO</div>
+
+          </div>
+
+          {/* Side panel: question + controls */}
+          <div className="w-full md:w-80 p-4 bg-white/3 rounded-xl border border-white/6 backdrop-blur-sm flex flex-col gap-3">
+            <div>
+              <div className="text-xs text-slate-200">Question</div>
+              <div className="mt-2 text-sm md:text-base font-semibold text-white min-h-[56px]">{ currentQuestion ? currentQuestion.q : (loading ? 'Loading question…' : 'No question available') }</div>
+            </div>
+
+            <div>
+              <div className="text-xs text-slate-200">Options (shoot the correct one)</div>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                { currentQuestion ? [currentQuestion.correct, ...currentQuestion.wrong].sort(()=>0.5-Math.random()).map((opt,i)=> (
+                  <div key={i} className="px-3 py-2 bg-white/6 rounded flex items-center justify-between text-sm border border-white/4">
+                    <div className="truncate text-white">{opt}</div>
+                    <div className="text-xs text-slate-300">Shoot</div>
+                  </div>
+                )) : null }
+              </div>
+            </div>
+
+            <div className="mt-auto text-sm text-slate-300">{message}</div>
+
+            <div className="flex gap-2 mt-2">
+              <button onClick={resetGame} className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white">Play Again</button>
+              <a className="px-3 py-2 bg-transparent border border-white/6 rounded text-white text-xs flex items-center gap-2" href={RIALO_URL} target="_blank" rel="noreferrer">Visit Rialo</a>
+            </div>
+          </div>
+        </div>
+
+        {/* bottom question progress bar */}
+        <div className="w-full p-4 bg-white/4 border-t border-white/6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-slate-200">{ currentQuestion ? `Q${roundIndex+1}/${questions.length}` : '' }</div>
+            <div className="w-64 h-3 bg-white/6 rounded overflow-hidden">
+              <div style={{ width: `${questions.length ? ((roundIndex+1)/questions.length*100) : 0}%` }} className="h-full bg-gradient-to-r from-cyan-400 to-violet-500"></div>
+            </div>
+          </div>
+
+          <div className="text-sm text-slate-300">Made with ❤️ — Rialo style</div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* Crosshair component */
+function Crosshair(){
+  const [pos, setPos] = useState({ x: '50%', y: '50%' });
+  useEffect(()=>{
+    function move(e){
+      const rect = document.querySelector('[data-crosshair-root]')?.getBoundingClientRect();
+      // fallback to window
+      setPos({ x: e.clientX + 'px', y: e.clientY + 'px' });
+    }
+    window.addEventListener('pointermove', move);
+    return ()=> window.removeEventListener('pointermove', move);
+  },[]);
+  return (
+    <div data-crosshair-root className="pointer-events-none fixed left-0 top-0 z-50" style={{ transform: 'translateZ(0)' }}>
+      <div style={{ position:'absolute', transform: 'translate(-50%, -50%)', left: pos.x, top: pos.y }} className="opacity-80">
+        <div style={{ width:28, height:28, borderRadius:9999, border:'2px solid rgba(126,231,255,0.6)', boxShadow:'0 4px 18px rgba(124,58,237,0.18)' }} />
+      </div>
+    </div>
+  );
+}

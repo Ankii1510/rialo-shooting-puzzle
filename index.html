@@ -1,16 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rialo Shooting Puzzle</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .fade {
       transition: all 0.3s ease;
     }
-    .correct { background-color: #16a34a !important; }
-    .wrong { background-color: #dc2626 !important; }
+    .correct {
+      background-color: #16a34a !important;
+    }
+    .wrong {
+      background-color: #dc2626 !important;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex flex-col items-center min-h-screen">
@@ -21,8 +25,9 @@
   </div>
 
   <!-- Start Screen -->
-  <div id="startScreen" class="flex flex-col items-center justify-center flex-1">
-    <img src="https://www.rialo.io/logo.png" alt="Rialo Logo" class="w-40 mb-8">
+  <div id="startScreen" class="flex flex-col items-center justify-center flex-1" style="margin-top:50px;">
+    <!-- Updated official Rialo logo -->
+    <img src="https://www.rialo.io/assets/logo.svg" alt="Rialo Logo" class="w-40 mb-8" />
     <button id="startBtn" class="px-8 py-4 bg-blue-600 text-white text-2xl rounded-lg hover:bg-blue-700 transition">
       Play
     </button>
@@ -35,11 +40,38 @@
   </div>
 
   <script>
-    // Questions from previous chats
+    // Updated questions based on Rialo website content
     const questions = [
-      { id: 1, question: "Question 1 from our previous chat?", options: ["A", "B", "C"], answer: "A" },
-      { id: 2, question: "Question 2 from our previous chat?", options: ["A", "B", "C"], answer: "B" },
-      { id: 3, question: "Question 3 from our previous chat?", options: ["A", "B", "C"], answer: "C" }
+      {
+        id: 1,
+        question: "What is Rialo designed for?",
+        options: ["Real-world blockchain", "Social media", "Gaming"],
+        answer: "Real-world blockchain"
+      },
+      {
+        id: 2,
+        question: "What capability does Rialo provide?",
+        options: ["Native web calls in smart contracts", "Only NFTs", "Messaging app"],
+        answer: "Native web calls in smart contracts"
+      },
+      {
+        id: 3,
+        question: "How does Rialo handle real-world data?",
+        options: ["Feeds data natively on chain", "Requires oracles", "Manual uploads"],
+        answer: "Feeds data natively on chain"
+      },
+      {
+        id: 4,
+        question: "What does Rialo enable in terms of identity?",
+        options: ["Email/SMS as Web3 passports", "Only wallet addresses", "No identity features"],
+        answer: "Email/SMS as Web3 passports"
+      },
+      {
+        id: 5,
+        question: "What kind of speed does Rialo offer?",
+        options: ["Sub-second end-to-end latency", "Minutes delay", "No speed guarantees"],
+        answer: "Sub-second end-to-end latency"
+      }
     ];
 
     const startScreen = document.getElementById('startScreen');
@@ -62,23 +94,38 @@
       questionContainer.innerHTML = `
         <h2 class="text-xl font-semibold mb-4">${q.question}</h2>
         <div class="flex flex-col space-y-2">
-          ${q.options.map(opt => `
-            <button class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition fade" onclick="selectAnswer('${opt}', this)">
+          ${q.options
+            .map(
+              (opt) => `
+            <button class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition fade" data-opt="${opt}">
               ${opt}
             </button>
-          `).join('')}
+          `
+            )
+            .join('')}
         </div>
       `;
+
+      const buttons = questionContainer.querySelectorAll('button[data-opt]');
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => selectAnswer(btn.dataset.opt, btn));
+      });
+
       scoreEl.textContent = `Score: ${score}`;
     }
 
     function selectAnswer(option, btn) {
       const correct = option === questions[current].answer;
       btn.classList.add(correct ? 'correct' : 'wrong');
+
+      // Disable all buttons to prevent multiple clicks
+      questionContainer.querySelectorAll('button[data-opt]').forEach((b) => (b.disabled = true));
+
       if (correct) score++;
+
       setTimeout(() => {
         current++;
-        if(current < questions.length){
+        if (current < questions.length) {
           showQuestion();
         } else {
           questionContainer.innerHTML = `<div class="text-2xl font-bold">Your final score: ${score}/${questions.length}</div>`;
@@ -89,3 +136,4 @@
   </script>
 </body>
 </html>
+
